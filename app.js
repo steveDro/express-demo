@@ -1,83 +1,58 @@
-const Joi = require("joi");
 const express = require("express");
+const helmet = require("helmet");
+const morgan = require("morgan");
 const app = express();
+const cookieSession = require("cookie-session");
+// const bodyParser = require("body-parser");
+
+const config = require("./config")[process.env.NODE_ENV || "development"];
+const logger = require("./middleware/logger");
+const speakers = require("./middleware/speakers");
+const index = require("./routes");
+const FeedbackService = require("./services/FeedbackService");
+const SpeakerService = require("./services/SpeakerService");
+
+const feedbackService = new FeedbackService("./data/feedback.json");
+const speakerService = new SpeakerService("./data/speakers.json");
 
 app.use(express.json());
+app.use(express.urlencoded());
+app.use(express.static("static"));
+app.use(helmet());
 
-const customers = [
-  { id: 1, name: "Sam" },
-  { id: 2, name: "Steve" },
-  { id: 3, name: "Esty" },
-  { id: 4, name: "Becky" },
-  { id: 5, name: "Jessy" },
-  { id: 6, name: "Prince" },
-];
+app.set("trust proxy", 1);
+app.use(
+  cookieSession({
+    name: "session",
+    keys: ["1234ewe323", "Ge793293"],
+  })
+);
 
-app.get("/", (req, res) => {
-  res.send("Hello World");
-});
-app.get("/api/customers", (req, res) => {
-  res.send(customers);
-});
+// app.use(bodyParser.urlencoded({ extended: true }));
+app.set("view engine", "ejs");
+app.set("views", "./views");
 
-app.get("/api/post/:year/:month", (req, res) => {
-  //   res.send(req.params);
-  res.send(req.query);
-});
-app.get("/api/customer/:id", (req, res) => {
-  const customer = customers.find((p) => p.id === parseInt(req.params.id));
-  if (!customer)
-    return res.status(404).send("The customer with the given ID was not found");
-  res.send(customer);
-});
+// setting global variables
+app.locals.sitename = "My Express App";
+app.use(speakers(speakerService));
 
-app.post("/api/customers", (req, res) => {
-  const { error } = validateCustomer(req.body);
-  if (error) {
-    res.status(400).send(error.details[0].message);
-    return;
-  }
+// routes
+app.use(
+  "/",
+  index({
+    feedbackService,
+    speakerService,
+  })
+);
+// const log = config.log();
 
-  const customer = {
-    id: customers.length + 1,
-    name: req.body.name,
-  };
-
-  customers.push(customer);
-  res.send(customer);
-});
-
-app.put("/api/customers/:id", (req, res) => {
-  // Look up the customer
-  const customer = customers.find((p) => p.id === parseInt(req.params.id));
-  if (!customer)
-    return res.status(404).send("The customer with the given ID was not found");
-
-  // validate the customer
-  const { error } = validateCustomer(req.body);
-  if (error) {
-    return res.status(400).send(error.details[0].message);
-  }
-
-  //update customer
-  customer.name = req.body.name;
-  res.send(customer);
-});
-
-function validateCustomer(customer) {
-  const schema = {
-    name: Joi.string().min(3).required(),
-  };
-
-  return Joi.validate(customer, schema);
+if (app.get("env") === "development") {
+  app.use(morgan("tiny"));
+  //   log.debug("morgan enabled...");
 }
 
-function getCustomer(id) {
-  const customer = customers.find((c) => c.id === id);
-  if (!customer) return null;
-
-  return customer;
-}
+// custom middleware
+app.use(logger);
 
 const port = process.env.PORT || 3000;
 
